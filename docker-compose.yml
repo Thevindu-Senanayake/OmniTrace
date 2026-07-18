@@ -1,6 +1,6 @@
 version: "3.8"
 
-# infra
+# ─── infra ───────────────────────────────────
 
 services:
   postgres:
@@ -85,6 +85,19 @@ services:
       kafka-topics --bootstrap-server kafka:29092 --list
       "
     restart: "no"
+
+  # ─── Application services ───────────────────────────────────
+  product-catalog:
+    build: ./services/product-catalog
+    container_name: product-catalog
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PRODUCT_CATALOG_PORT}:3001"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/catalog_db?sslmode=disable
+      PORT: "3001"
 
 volumes:
   postgres-data:
