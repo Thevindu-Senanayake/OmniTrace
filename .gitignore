@@ -1,0 +1,72 @@
+# ─── OS / Editor ───────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Keep .vscode out of version control by default
+.vscode/
+
+# ─── Node.js (api-gateway, notification-service) ───────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# ─── Go (order-service, product-catalog) ───────────────────────
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+# Test binary, built with `go test -c`
+*.test
+# Output of `go tool cover`
+*.out
+# Go workspace file
+go.work
+go.work.sum
+# Build output dirs
+bin/
+dist/
+
+# ─── Java / Maven (inventory-service, payment-service) ─────────
+target/
+*.class
+*.jar
+!**/.mvn/wrapper/maven-wrapper.jar
+!**/gradle/wrapper/gradle-wrapper.jar
+*.war
+*.ear
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.properties
+# IntelliJ / Eclipse
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+
+# ─── Observability / Runtime data ──────────────────────────────
+# Local volume data from docker-compose (Prometheus/Loki/Tempo/Grafana)
+observability/**/data/
+**/tsdb/
+**/wal/
+
+# ─── Docker ────────────────────────────────────────────────────
+# (compose files themselves ARE tracked)
+
+# ─── Load testing output ───────────────────────────────────────
+load-gen/results/
+*.k6-summary.json
+
+# ─── Logs ──────────────────────────────────────────────────────
+*.log
+logs/

@@ -1,0 +1,23 @@
+# Normalize line endings: LF in the repo, auto-convert on checkout.
+# Prevents CRLF churn from a Windows working tree across a polyglot codebase.
+* text=auto eol=lf
+
+# Explicitly LF for shell scripts and configs consumed inside Linux containers
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+Dockerfile text eol=lf
+*.go    text eol=lf
+*.js    text eol=lf
+*.java  text eol=lf
+
+# Windows batch files stay CRLF
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Treat these as binary (no diff, no eol conversion)
+*.docx  binary
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jar   binary
