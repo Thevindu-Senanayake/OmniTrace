@@ -3,6 +3,24 @@ version: "3.8"
 # infra
 
 services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      # Host access for psql / IDE debugging
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - ./postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
     container_name: zookeeper
@@ -23,7 +41,7 @@ services:
         condition: service_healthy
     ports:
       # Host access for local debugging (kcat, IDE runs)
-      - "9092:9092"
+      - "${KAFKA_EXTERNAL_PORT}:9092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -67,6 +85,9 @@ services:
       kafka-topics --bootstrap-server kafka:29092 --list
       "
     restart: "no"
+
+volumes:
+  postgres-data:
 
 networks:
   default:
