@@ -144,6 +144,28 @@ services:
     environment:
       PORT: "3005"
 
+  payment-service:
+    build: ./services/payment-service
+    container_name: payment-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      payment-gateway:
+        condition: service_started
+    ports:
+      - "${PAYMENT_SERVICE_PORT}:3004"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/payments_db?sslmode=disable
+      PORT: "3004"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      # Points directly at the gateway now; the Toxiproxy step will repoint
+      # this at the proxy listener.
+      PAYMENT_GATEWAY_URL: http://payment-gateway:3005
+
 volumes:
   postgres-data:
 
