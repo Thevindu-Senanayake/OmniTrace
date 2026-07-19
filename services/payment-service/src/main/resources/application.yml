@@ -1,0 +1,63 @@
+server:
+  port: ${PORT:3004}
+
+spring:
+  application:
+    name: payment-service
+
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema; never let Hibernate mutate it.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: payment-service
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    listener:
+      # Commit offsets only after the handler returns, so a failed processing
+      # attempt is redelivered (the consumer is idempotent on order_id).
+      ack-mode: record
+
+# Outbound payment gateway. In production PAYMENT_GATEWAY_URL points at the
+# Toxiproxy listener rather than the gateway directly, so latency/failures are
+# injected at the network layer.
+payment:
+  gateway:
+    url: ${PAYMENT_GATEWAY_URL:http://localhost:3005}
+    # Read timeout below the Toxiproxy 5s delay so a stalled gateway surfaces as
+    # a TIMEOUT failure rather than blocking the consumer indefinitely.
+    connect-timeout-ms: 2000
+    read-timeout-ms: 4000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
