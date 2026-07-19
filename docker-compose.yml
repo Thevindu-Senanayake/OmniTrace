@@ -136,6 +136,14 @@ services:
       PORT: "3002"
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
+  payment-gateway:
+    build: ./services/payment-gateway
+    container_name: payment-gateway
+    ports:
+      - "${PAYMENT_GATEWAY_PORT}:3005"
+    environment:
+      PORT: "3005"
+
 volumes:
   postgres-data:
 
