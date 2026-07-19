@@ -1,0 +1,54 @@
+server:
+  port: ${PORT:3002}
+
+spring:
+  application:
+    name: inventory-service
+
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      # Small pool on purpose: under k6 spike load the reservation queue forms
+      # here, surfacing connection-pool pressure and lock waits in traces.
+      maximum-pool-size: 10
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema; never let Hibernate mutate it.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: inventory-service
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    listener:
+      # Commit offsets only after the handler returns, so a failed reservation
+      # is redelivered (consumers are idempotent).
+      ack-mode: record
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
