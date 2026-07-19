@@ -99,6 +99,26 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/catalog_db?sslmode=disable
       PORT: "3001"
 
+  order-service:
+    build: ./services/order-service
+    container_name: order-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      product-catalog:
+        condition: service_started
+    ports:
+      - "${ORDER_SERVICE_PORT}:3000"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/orders_db?sslmode=disable
+      PORT: "3000"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      PRODUCT_CATALOG_URL: http://product-catalog:3001
+
 volumes:
   postgres-data:
 
