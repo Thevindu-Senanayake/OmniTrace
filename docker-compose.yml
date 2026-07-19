@@ -119,6 +119,23 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       PRODUCT_CATALOG_URL: http://product-catalog:3001
 
+  inventory-service:
+    build: ./services/inventory-service
+    container_name: inventory-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "${INVENTORY_SERVICE_PORT}:3002"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/inventory_db?sslmode=disable
+      PORT: "3002"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
 volumes:
   postgres-data:
 
