@@ -12,28 +12,40 @@ const (
 	StatusOutOfStock    OrderStatus = "OUT_OF_STOCK"
 )
 
-// Order is a customer order backed by orders_db.
+// OrderItem is a single line in an order, priced from the catalog at order time.
+type OrderItem struct {
+	ItemID    string  `json:"itemId"`
+	Quantity  int     `json:"quantity"`
+	UnitPrice float64 `json:"unitPrice"`
+}
+
+// Order is a customer order backed by orders_db (header + order_items lines).
 type Order struct {
 	ID          string      `json:"id"`
 	CustomerID  string      `json:"customerId"`
-	ItemID      string      `json:"itemId"`
-	Quantity    int         `json:"quantity"`
+	Items       []OrderItem `json:"items"`
 	TotalAmount float64     `json:"totalAmount"`
 	Status      OrderStatus `json:"status"`
 	CreatedAt   time.Time   `json:"createdAt"`
 	UpdatedAt   time.Time   `json:"updatedAt"`
 }
 
+// EventItem is one line as carried on the wire in order.created.
+type EventItem struct {
+	ItemID    string  `json:"itemId"`
+	Quantity  int     `json:"quantity"`
+	UnitPrice float64 `json:"unitPrice"`
+}
+
 // OrderCreatedEvent is published to the order.created topic.
 type OrderCreatedEvent struct {
-	EventType   string    `json:"eventType"`
-	Version     int       `json:"version"`
-	OrderID     string    `json:"orderId"`
-	CustomerID  string    `json:"customerId"`
-	ItemID      string    `json:"itemId"`
-	Quantity    int       `json:"quantity"`
-	TotalAmount float64   `json:"totalAmount"`
-	Timestamp   time.Time `json:"timestamp"`
+	EventType   string      `json:"eventType"`
+	Version     int         `json:"version"`
+	OrderID     string      `json:"orderId"`
+	CustomerID  string      `json:"customerId"`
+	Items       []EventItem `json:"items"`
+	TotalAmount float64     `json:"totalAmount"`
+	Timestamp   time.Time   `json:"timestamp"`
 }
 
 // SagaEvent is the minimal shape consumed from payment.success,

@@ -27,14 +27,36 @@ func NewPostgresOrderRepository(pool *pgxpool.Pool) *PostgresOrderRepository {
 	return &PostgresOrderRepository{pool: pool}
 }
 
+// Create persists the order header and all its line items in one transaction,
+// so an order is never half-written.
 func (r *PostgresOrderRepository) Create(ctx context.Context, order domain.Order) (domain.Order, error) {
-	err := r.pool.QueryRow(ctx,
-		`INSERT INTO orders (customer_id, item_id, quantity, total_amount, status)
-		 VALUES ($1, $2, $3, $4, $5)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.Order{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after a successful commit
+
+	err = tx.QueryRow(ctx,
+		`INSERT INTO orders (customer_id, total_amount, status)
+		 VALUES ($1, $2, $3)
 		 RETURNING id, created_at, updated_at`,
-		order.CustomerID, order.ItemID, order.Quantity, order.TotalAmount, string(domain.StatusPending),
+		order.CustomerID, order.TotalAmount, string(domain.StatusPending),
 	).Scan(&order.ID, &order.CreatedAt, &order.UpdatedAt)
 	if err != nil {
+		return domain.Order{}, err
+	}
+
+	for _, item := range order.Items {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO order_items (order_id, item_id, quantity, unit_price)
+			 VALUES ($1, $2, $3, $4)`,
+			order.ID, item.ItemID, item.Quantity, item.UnitPrice,
+		); err != nil {
+			return domain.Order{}, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return domain.Order{}, err
 	}
 	order.Status = domain.StatusPending

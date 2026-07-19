@@ -22,11 +22,16 @@ var (
 	ErrProductNotFound = errors.New("product not found")
 )
 
-// PlaceOrderRequest is the incoming order payload.
+// OrderLine is a single requested item in an order request.
+type OrderLine struct {
+	ItemID   string `json:"itemId"`
+	Quantity int    `json:"quantity"`
+}
+
+// PlaceOrderRequest is the incoming order payload (one or more line items).
 type PlaceOrderRequest struct {
-	CustomerID string `json:"customerId"`
-	ItemID     string `json:"itemId"`
-	Quantity   int    `json:"quantity"`
+	CustomerID string      `json:"customerId"`
+	Items      []OrderLine `json:"items"`
 }
 
 // OrderService orchestrates order placement and saga status transitions.
@@ -41,47 +46,69 @@ func New(repo repository.OrderRepository, catalogClient *catalog.Client, produce
 	return &OrderService{repo: repo, catalog: catalogClient, producer: producer, logger: logger}
 }
 
-// PlaceOrder validates the request, prices it from the catalog, persists a
-// PENDING order and publishes order.created. The price always comes from the
-// catalog — never from the client.
+// PlaceOrder validates the request, prices every line from the catalog,
+// persists a PENDING order with its items and publishes order.created. Prices
+// always come from the catalog — never from the client.
 func (s *OrderService) PlaceOrder(ctx context.Context, req PlaceOrderRequest, requestID string) (domain.Order, error) {
 	if req.CustomerID == "" {
 		return domain.Order{}, fmt.Errorf("%w: customerId is required", ErrValidation)
 	}
-	if _, err := uuid.Parse(req.ItemID); err != nil {
-		return domain.Order{}, fmt.Errorf("%w: itemId must be a valid UUID", ErrValidation)
-	}
-	if req.Quantity <= 0 {
-		return domain.Order{}, fmt.Errorf("%w: quantity must be positive", ErrValidation)
+	if len(req.Items) == 0 {
+		return domain.Order{}, fmt.Errorf("%w: at least one item is required", ErrValidation)
 	}
 
-	product, err := s.catalog.GetProduct(ctx, req.ItemID, requestID)
-	if errors.Is(err, catalog.ErrProductNotFound) {
-		return domain.Order{}, fmt.Errorf("%w: %s", ErrProductNotFound, req.ItemID)
-	}
-	if err != nil {
-		return domain.Order{}, err
-	}
+	seen := make(map[string]struct{}, len(req.Items))
+	items := make([]domain.OrderItem, 0, len(req.Items))
+	total := 0.0
+	for _, line := range req.Items {
+		if _, err := uuid.Parse(line.ItemID); err != nil {
+			return domain.Order{}, fmt.Errorf("%w: itemId must be a valid UUID", ErrValidation)
+		}
+		if line.Quantity <= 0 {
+			return domain.Order{}, fmt.Errorf("%w: quantity must be positive for item %s", ErrValidation, line.ItemID)
+		}
+		if _, dup := seen[line.ItemID]; dup {
+			return domain.Order{}, fmt.Errorf("%w: item %s listed more than once", ErrValidation, line.ItemID)
+		}
+		seen[line.ItemID] = struct{}{}
 
-	total := math.Round(product.Price*float64(req.Quantity)*100) / 100
+		product, err := s.catalog.GetProduct(ctx, line.ItemID, requestID)
+		if errors.Is(err, catalog.ErrProductNotFound) {
+			return domain.Order{}, fmt.Errorf("%w: %s", ErrProductNotFound, line.ItemID)
+		}
+		if err != nil {
+			return domain.Order{}, err
+		}
+
+		items = append(items, domain.OrderItem{
+			ItemID:    line.ItemID,
+			Quantity:  line.Quantity,
+			UnitPrice: product.Price,
+		})
+		total += product.Price * float64(line.Quantity)
+	}
+	total = math.Round(total*100) / 100
+
 	order, err := s.repo.Create(ctx, domain.Order{
 		CustomerID:  req.CustomerID,
-		ItemID:      req.ItemID,
-		Quantity:    req.Quantity,
+		Items:       items,
 		TotalAmount: total,
 	})
 	if err != nil {
 		return domain.Order{}, err
 	}
-	s.logger.Info("order persisted", "order_id", order.ID, "request_id", requestID, "status", order.Status)
+	s.logger.Info("order persisted", "order_id", order.ID, "request_id", requestID, "status", order.Status, "items", len(order.Items))
 
+	eventItems := make([]domain.EventItem, len(order.Items))
+	for i, it := range order.Items {
+		eventItems[i] = domain.EventItem{ItemID: it.ItemID, Quantity: it.Quantity, UnitPrice: it.UnitPrice}
+	}
 	event := domain.OrderCreatedEvent{
 		EventType:   kafkapkg.TopicOrderCreated,
 		Version:     1,
 		OrderID:     order.ID,
 		CustomerID:  order.CustomerID,
-		ItemID:      order.ItemID,
-		Quantity:    order.Quantity,
+		Items:       eventItems,
 		TotalAmount: order.TotalAmount,
 		Timestamp:   time.Now().UTC(),
 	}
