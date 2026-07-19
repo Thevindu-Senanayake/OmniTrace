@@ -1,19 +1,19 @@
 package com.ieeeyp.ecommerce.inventory.messaging.event;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * Outbound {@code inventory.reserved} event consumed by the Payment Service.
- * Carries forward the item and amount so payment can proceed without querying
- * another service's database. Single-item shape mirrors order.created.
+ * Carries the full item list and amount forward so payment can proceed without
+ * querying another service's database.
  */
 public record InventoryReservedEvent(
         String eventType,
         int version,
         String orderId,
         String customerId,
-        String itemId,
-        int quantity,
+        List<OrderCreatedEvent.Item> items,
         BigDecimal totalAmount,
         String timestamp) {
 
@@ -23,8 +23,7 @@ public record InventoryReservedEvent(
                 1,
                 order.orderId(),
                 order.customerId(),
-                order.itemId(),
-                order.quantity(),
+                order.items(),
                 order.totalAmount(),
                 timestamp);
     }
