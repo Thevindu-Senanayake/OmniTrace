@@ -23,7 +23,7 @@ CREATE TABLE inventory_events (
 
 CREATE INDEX idx_inventory_events_order ON inventory_events(order_id);
 
--- One RESERVED (and one RELEASED) row per order is allowed at most once,
--- enforcing consumer idempotency at the database level.
-CREATE UNIQUE INDEX uq_inventory_events_order_action
-    ON inventory_events(order_id, action);
+-- One RESERVED (and one RELEASED) row per item per order, enforcing consumer
+-- idempotency at the database level for multi-item orders.
+CREATE UNIQUE INDEX uq_inventory_events_order_item_action
+    ON inventory_events(order_id, item_id, action);
