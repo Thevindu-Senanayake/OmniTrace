@@ -45,7 +45,8 @@ public class InventoryEvent {
     @Column(nullable = false, length = 32)
     private String action;
 
-    @Column(name = "created_at")
+    // Populated by the DB default (now()); never written by the app.
+    @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
     public InventoryEvent(UUID orderId, String itemId, int quantity, Action action) {
