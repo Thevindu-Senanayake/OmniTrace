@@ -19,8 +19,11 @@
 
     <properties>
         <java.version>21</java.version>
-        <!-- Boot 3.2.5 pins an older Lombok; override for newer JDK support. -->
-        <lombok.version>1.18.34</lombok.version>
+        <!-- Boot 3.2.5 pins Lombok 1.18.30, which crashes on JDK 23+
+             (TypeTag::UNKNOWN). 1.18.40 supports the JDK 25 local toolchain;
+             it is also wired as an explicit annotation processor below because
+             JDK 23+ no longer auto-discovers processors from the classpath. -->
+        <lombok.version>1.18.40</lombok.version>
     </properties>
 
     <dependencies>
@@ -60,6 +63,21 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- JDK 23+ no longer auto-discovers processors from the
+                         classpath, so declare Lombok explicitly. -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
