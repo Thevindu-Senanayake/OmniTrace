@@ -87,6 +87,21 @@ services:
     restart: "no"
 
   # ─── Application services ───────────────────────────────────
+  api-gateway:
+    build: ./services/api-gateway
+    container_name: api-gateway
+    depends_on:
+      order-service:
+        condition: service_started
+      product-catalog:
+        condition: service_started
+    ports:
+      - "${API_GATEWAY_PORT}:8080"
+    environment:
+      PORT: "8080"
+      ORDER_SERVICE_URL: http://order-service:3000
+      PRODUCT_CATALOG_URL: http://product-catalog:3001
+
   product-catalog:
     build: ./services/product-catalog
     container_name: product-catalog
