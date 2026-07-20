@@ -166,6 +166,20 @@ services:
       # this at the proxy listener.
       PAYMENT_GATEWAY_URL: http://payment-gateway:3005
 
+  notification-service:
+    build: ./services/notification-service
+    container_name: notification-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "${NOTIFICATION_SERVICE_PORT}:3003"
+    environment:
+      PORT: "3003"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
 volumes:
   postgres-data:
 
