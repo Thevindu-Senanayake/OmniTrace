@@ -1,0 +1,115 @@
+{{- /*
+Renders a Deployment + ClusterIP Service for every entry in .Values.services.
+Per-service environment is assembled from conventions:
+  - services with a `db` get DATABASE_URL pointing at the postgres Service
+  - saga participants get KAFKA_BOOTSTRAP_SERVERS
+  - the two gateways/consumers get their specific URLs
+Dependencies are gated by init containers so nothing starts before Postgres and
+Kafka accept connections. All services expose GET /health, used for liveness and
+readiness probes. Host access goes through the Ingress, not per-service NodePorts.
+*/ -}}
+{{- $root := . -}}
+{{- range $name, $svc := .Values.services }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "eco.labels" $root | nindent 4 }}
+    {{- include "eco.selectorLabels" (dict "name" $name) | nindent 4 }}
+spec:
+  replicas: {{ $svc.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "eco.selectorLabels" (dict "name" $name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "eco.labels" $root | nindent 8 }}
+        {{- include "eco.selectorLabels" (dict "name" $name) | nindent 8 }}
+    spec:
+      {{- $needsKafka := or (eq $name "order-service") (eq $name "inventory-service") (eq $name "payment-service") (eq $name "notification-service") }}
+      {{- if or $svc.db $needsKafka }}
+      # Gate startup on dependencies being reachable. Without this, services
+      # race ahead of Postgres/Kafka and crashloop (or, for consumers, come up
+      # with a wedged connection) during a cold `helm install`.
+      initContainers:
+        {{- if $svc.db }}
+        - name: wait-for-postgres
+          image: {{ $root.Values.global.waitImage }}
+          command: ["sh", "-c", "until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done"]
+        {{- end }}
+        {{- if $needsKafka }}
+        - name: wait-for-kafka
+          image: {{ $root.Values.global.waitImage }}
+          command: ["sh", "-c", "until nc -z kafka 9092; do echo waiting for kafka; sleep 2; done"]
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ $svc.image }}
+          imagePullPolicy: {{ $root.Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ $svc.port }}
+          env:
+            - name: PORT
+              value: {{ $svc.port | quote }}
+            {{- if $svc.db }}
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/{{ $svc.db }}?sslmode=disable"
+            {{- end }}
+            {{- if $needsKafka }}
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka:9092"
+            {{- end }}
+            {{- if or (eq $name "order-service") (eq $name "api-gateway") }}
+            - name: PRODUCT_CATALOG_URL
+              value: "http://product-catalog:3001"
+            {{- end }}
+            {{- if eq $name "api-gateway" }}
+            - name: ORDER_SERVICE_URL
+              value: "http://order-service:3000"
+            {{- end }}
+            {{- if eq $name "payment-service" }}
+            - name: PAYMENT_GATEWAY_URL
+              value: "http://payment-gateway:3005"
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ $svc.port }}
+            initialDelaySeconds: {{ $svc.livenessDelay | default 20 }}
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ $svc.port }}
+            initialDelaySeconds: {{ $svc.readinessDelay | default 10 }}
+            periodSeconds: 10
+          resources:
+            {{- toYaml $svc.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "eco.labels" $root | nindent 4 }}
+spec:
+  selector:
+    {{- include "eco.selectorLabels" (dict "name" $name) | nindent 4 }}
+  ports:
+    - port: {{ $svc.port }}
+      targetPort: {{ $svc.port }}
+---
+{{- end }}
