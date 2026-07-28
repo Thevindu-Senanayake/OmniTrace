@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ecommerce-observability
+description: E-commerce order processing platform — API gateway, saga services, Kafka and PostgreSQL
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
