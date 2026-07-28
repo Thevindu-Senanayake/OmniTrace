@@ -1,0 +1,120 @@
+# ─── Global settings ─────────────────────────────────────────
+global:
+  # Docker Desktop shares the local Docker daemon with the cluster, so images
+  # built by `docker compose build` are available without a registry.
+  imagePullPolicy: IfNotPresent
+  # Used by the init containers that gate each service on its dependencies.
+  waitImage: busybox:1.36
+
+# ─── Host access ─────────────────────────────────────────────
+# Docker Desktop's kind-based cluster does not publish NodePorts to the Windows
+# host, but it does publish LoadBalancer service ports — so the gateway is
+# reached through an ingress controller rather than a NodePort. The controller
+# itself is a cluster add-on and is not installed by this chart.
+ingress:
+  enabled: true
+  className: nginx
+  # Host-less rule: matches any Host header, so http://localhost/ works.
+  host: ""
+  annotations: {}
+
+# ─── Data layer ──────────────────────────────────────────────
+postgres:
+  image: postgres:15-alpine
+  # Credentials are rendered into a Secret; override in a values override file
+  # or via --set for anything beyond local development.
+  user: postgres
+  password: postgres
+  storage: 1Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# ─── Messaging (Kafka in KRaft mode — no Zookeeper) ──────────
+kafka:
+  image: confluentinc/cp-kafka:7.6.1
+  clusterId: "MkU3OEVBNTcwNTJENDM2Qk"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  topics:
+    - order.created
+    - inventory.reserved
+    - inventory.failed
+    - payment.success
+    - payment.failed
+  partitions: 3
+  replicationFactor: 1
+
+# ─── Application services ────────────────────────────────────
+# Each entry renders a Deployment + ClusterIP Service. image names match the
+# compose project build output (ieeeyp-<service>).
+services:
+  product-catalog:
+    image: ieeeyp-product-catalog
+    port: 3001
+    replicas: 1
+    db: catalog_db
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 500m, memory: 128Mi }
+
+  order-service:
+    image: ieeeyp-order-service
+    port: 3000
+    replicas: 1
+    db: orders_db
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 500m, memory: 128Mi }
+
+  inventory-service:
+    image: ieeeyp-inventory-service
+    port: 3002
+    replicas: 1
+    db: inventory_db
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "1", memory: 768Mi }
+
+  payment-service:
+    image: ieeeyp-payment-service
+    port: 3004
+    replicas: 1
+    db: payments_db
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "1", memory: 768Mi }
+
+  payment-gateway:
+    image: ieeeyp-payment-gateway
+    port: 3005
+    replicas: 1
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 250m, memory: 128Mi }
+
+  notification-service:
+    image: ieeeyp-notification-service
+    port: 3003
+    replicas: 1
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 250m, memory: 128Mi }
+
+  api-gateway:
+    image: ieeeyp-api-gateway
+    port: 8080
+    replicas: 1
+    # Reached from the host through the Ingress above, not a NodePort.
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 250m, memory: 128Mi }
