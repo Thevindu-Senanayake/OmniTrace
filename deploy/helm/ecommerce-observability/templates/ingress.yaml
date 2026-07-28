@@ -1,0 +1,28 @@
+{{- if .Values.ingress.enabled }}
+{{- $gw := index .Values.services "api-gateway" -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-gateway
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    # A rule with no host matches any Host header, which is what makes
+    # http://localhost/ work through a LoadBalancer-backed controller.
+    - {{ if .Values.ingress.host }}host: {{ .Values.ingress.host | quote }}
+      {{ end }}http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: {{ $gw.port }}
+{{- end }}

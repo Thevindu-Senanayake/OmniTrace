@@ -1,0 +1,35 @@
+{{ .Chart.Name }} installed as release "{{ .Release.Name }}".
+
+{{- if .Values.ingress.enabled }}
+Host access goes through an ingress controller. This chart renders the Ingress
+but does not install a controller — that is a one-time cluster add-on:
+
+  helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+  helm install ingress-nginx ingress-nginx/ingress-nginx \
+    --namespace ingress-nginx --create-namespace
+
+Docker Desktop publishes LoadBalancer service ports to the host, so once the
+controller is running the stack is reachable at:
+
+  http://localhost/health
+  http://localhost/products
+
+Place an order:
+
+  curl -X POST http://localhost/order \
+    -H 'Content-Type: application/json' \
+    -d '{"customerId":"cust-1","items":[{"itemId":"00000000-0000-0000-0000-000000000001","quantity":1}]}'
+
+NodePorts are deliberately not used: Docker Desktop's kind-based cluster does
+not publish them to the Windows host.
+{{- else }}
+Ingress is disabled. Reach the gateway with a port-forward:
+
+  kubectl port-forward svc/api-gateway 8080:{{ (index .Values.services "api-gateway").port }}
+  curl http://localhost:8080/health
+{{- end }}
+
+Watch rollout:
+
+  kubectl get pods -w
+  kubectl logs -l app.kubernetes.io/name=notification-service -f
