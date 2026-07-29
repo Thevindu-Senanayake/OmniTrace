@@ -54,6 +54,19 @@ kafka:
   partitions: 3
   replicationFactor: 1
 
+# ─── Network chaos ───────────────────────────────────────────
+# Transparent TCP proxy in front of the Payment Gateway. It is always in the
+# payment path but starts with no toxics, so it behaves as a plain wire until
+# faults are injected through the REST API on apiPort — no redeploy needed, and
+# a clean baseline is preserved. See toxiproxy/scenarios.md.
+toxiproxy:
+  image: ghcr.io/shopify/toxiproxy:2.9.0
+  apiPort: 8474
+  paymentPort: 3105
+  resources:
+    requests: { cpu: 50m, memory: 32Mi }
+    limits: { cpu: 250m, memory: 64Mi }
+
 # ─── Application services ────────────────────────────────────
 # Each entry renders a Deployment + ClusterIP Service. image names match the
 # compose project build output (ieeeyp-<service>).

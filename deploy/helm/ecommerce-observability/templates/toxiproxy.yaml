@@ -1,0 +1,93 @@
+{{- /*
+Toxiproxy sits in the payment path in every environment, but ships with no
+toxics — it is a transparent wire until faults are injected at runtime through
+the REST API. Keeping it always in-path means chaos needs no redeploy, and
+leaves a clean baseline to measure against.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: toxiproxy-config
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+data:
+  toxiproxy-config.json: |
+    [
+      {
+        "name": "payment-gateway",
+        "listen": "0.0.0.0:{{ .Values.toxiproxy.paymentPort }}",
+        "upstream": "payment-gateway:{{ (index .Values.services "payment-gateway").port }}",
+        "enabled": true
+      }
+    ]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: toxiproxy
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+    {{- include "eco.selectorLabels" (dict "name" "toxiproxy") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "eco.selectorLabels" (dict "name" "toxiproxy") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Restart the proxy when its routing changes; without this a ConfigMap
+        # edit would sit unread until the pod happened to restart.
+        checksum/config: {{ toJson .Values.toxiproxy | sha256sum }}
+      labels:
+        {{- include "eco.labels" . | nindent 8 }}
+        {{- include "eco.selectorLabels" (dict "name" "toxiproxy") | nindent 8 }}
+    spec:
+      containers:
+        - name: toxiproxy
+          image: {{ .Values.toxiproxy.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - -host=0.0.0.0
+            - -config=/config/toxiproxy-config.json
+          ports:
+            - name: api
+              containerPort: {{ .Values.toxiproxy.apiPort }}
+            - name: payment
+              containerPort: {{ .Values.toxiproxy.paymentPort }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.toxiproxy.apiPort }}
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.toxiproxy.apiPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.toxiproxy.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: toxiproxy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: toxiproxy
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "eco.selectorLabels" (dict "name" "toxiproxy") | nindent 4 }}
+  ports:
+    - name: api
+      port: {{ .Values.toxiproxy.apiPort }}
+      targetPort: {{ .Values.toxiproxy.apiPort }}
+    - name: payment
+      port: {{ .Values.toxiproxy.paymentPort }}
+      targetPort: {{ .Values.toxiproxy.paymentPort }}

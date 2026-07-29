@@ -29,7 +29,8 @@ spec:
         {{- include "eco.selectorLabels" (dict "name" $name) | nindent 8 }}
     spec:
       {{- $needsKafka := or (eq $name "order-service") (eq $name "inventory-service") (eq $name "payment-service") (eq $name "notification-service") }}
-      {{- if or $svc.db $needsKafka }}
+      {{- $needsToxiproxy := eq $name "payment-service" }}
+      {{- if or $svc.db (or $needsKafka $needsToxiproxy) }}
       # Gate startup on dependencies being reachable. Without this, services
       # race ahead of Postgres/Kafka and crashloop (or, for consumers, come up
       # with a wedged connection) during a cold `helm install`.
@@ -43,6 +44,11 @@ spec:
         - name: wait-for-kafka
           image: {{ $root.Values.global.waitImage }}
           command: ["sh", "-c", "until nc -z kafka 9092; do echo waiting for kafka; sleep 2; done"]
+        {{- end }}
+        {{- if $needsToxiproxy }}
+        - name: wait-for-toxiproxy
+          image: {{ $root.Values.global.waitImage }}
+          command: ["sh", "-c", "until nc -z toxiproxy {{ $root.Values.toxiproxy.paymentPort }}; do echo waiting for toxiproxy; sleep 2; done"]
         {{- end }}
       {{- end }}
       containers:
@@ -81,8 +87,10 @@ spec:
               value: "http://order-service:3000"
             {{- end }}
             {{- if eq $name "payment-service" }}
+            # Routed through Toxiproxy so network faults can be injected
+            # without touching this service or the gateway.
             - name: PAYMENT_GATEWAY_URL
-              value: "http://payment-gateway:3005"
+              value: "http://toxiproxy:{{ $root.Values.toxiproxy.paymentPort }}"
             {{- end }}
           livenessProbe:
             httpGet:
