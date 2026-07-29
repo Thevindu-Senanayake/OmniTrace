@@ -41,16 +41,18 @@ spring:
       # attempt is redelivered (the consumer is idempotent on order_id).
       ack-mode: record
 
-# Outbound payment gateway. In production PAYMENT_GATEWAY_URL points at the
-# Toxiproxy listener rather than the gateway directly, so latency/failures are
-# injected at the network layer.
+# Outbound payment gateway. PAYMENT_GATEWAY_URL points at the Toxiproxy
+# listener rather than the gateway directly, so latency/failures are injected at
+# the network layer.
 payment:
   gateway:
     url: ${PAYMENT_GATEWAY_URL:http://localhost:3005}
-    # Read timeout below the Toxiproxy 5s delay so a stalled gateway surfaces as
-    # a TIMEOUT failure rather than blocking the consumer indefinitely.
     connect-timeout-ms: 2000
-    read-timeout-ms: 4000
+    # Must sit between a healthy call (~200ms, and slower on a cold JVM) and the
+    # timeout toxic (10s), so an injected stall surfaces as TIMEOUT while normal
+    # calls never do. 4s was too tight: cold-start calls tripped it with no
+    # chaos active, which is indistinguishable from a real injected fault.
+    read-timeout-ms: 8000
 
 management:
   endpoints:
