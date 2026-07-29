@@ -159,6 +159,27 @@ services:
     environment:
       PORT: "3005"
 
+  # Transparent TCP proxy in front of the Payment Gateway. Starts with no
+  # toxics, so it is a plain wire until chaos is injected at runtime through
+  # the REST API on 8474 — see toxiproxy/scenarios.md.
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    container_name: toxiproxy
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy-config.json"]
+    depends_on:
+      payment-gateway:
+        condition: service_started
+    ports:
+      - "${TOXIPROXY_API_PORT}:8474"
+      - "${TOXIPROXY_PAYMENT_PORT}:3105"
+    volumes:
+      - ./toxiproxy/toxiproxy-config.json:/config/toxiproxy-config.json:ro
+    healthcheck:
+      test: ["CMD", "/toxiproxy-cli", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   payment-service:
     build: ./services/payment-service
     container_name: payment-service
@@ -169,17 +190,17 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
-      payment-gateway:
-        condition: service_started
+      toxiproxy:
+        condition: service_healthy
     ports:
       - "${PAYMENT_SERVICE_PORT}:3004"
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/payments_db?sslmode=disable
       PORT: "3004"
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      # Points directly at the gateway now; the Toxiproxy step will repoint
-      # this at the proxy listener.
-      PAYMENT_GATEWAY_URL: http://payment-gateway:3005
+      # Routed through Toxiproxy so network faults can be injected without
+      # touching the gateway or this service.
+      PAYMENT_GATEWAY_URL: http://toxiproxy:3105
 
   notification-service:
     build: ./services/notification-service
