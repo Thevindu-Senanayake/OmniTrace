@@ -1,0 +1,8 @@
+[
+  {
+    "name": "payment-gateway",
+    "listen": "0.0.0.0:3105",
+    "upstream": "payment-gateway:3005",
+    "enabled": true
+  }
+]
