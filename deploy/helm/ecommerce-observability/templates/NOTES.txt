@@ -11,17 +11,25 @@ but does not install a controller — that is a one-time cluster add-on:
 Docker Desktop publishes LoadBalancer service ports to the host, so once the
 controller is running the stack is reachable at:
 
-  http://localhost/health
-  http://localhost/products
+  http://127.0.0.1/health
+  http://127.0.0.1/products
 
 Place an order:
 
-  curl -X POST http://localhost/order \
+  curl -X POST http://127.0.0.1/order \
     -H 'Content-Type: application/json' \
     -d '{"customerId":"cust-1","items":[{"itemId":"00000000-0000-0000-0000-000000000001","quantity":1}]}'
 
+Use 127.0.0.1 rather than localhost: on Windows localhost resolves to ::1
+first, and the published port is not bound on IPv6, so requests hang.
+
 NodePorts are deliberately not used: Docker Desktop's kind-based cluster does
 not publish them to the Windows host.
+
+Inject network chaos on the payment path (the proxy starts with no toxics):
+
+  kubectl port-forward svc/toxiproxy 8474:8474
+  # then follow toxiproxy/scenarios.md
 {{- else }}
 Ingress is disabled. Reach the gateway with a port-forward:
 
