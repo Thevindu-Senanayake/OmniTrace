@@ -63,3 +63,12 @@ management:
     health:
       probes:
         enabled: true
+
+logging:
+  pattern:
+    # The OTel Java agent puts the active span's ids into the logback MDC as
+    # trace_id/span_id; Spring Boot's default console pattern renders this
+    # correlation fragment, so `docker logs` shows the same ids Tempo and Loki
+    # key on. order_id and service are already in the message text; to Loki the
+    # ids travel as OTLP structured metadata.
+    correlation: "[trace_id=%mdc{trace_id:-} span_id=%mdc{span_id:-}] "

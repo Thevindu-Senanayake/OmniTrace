@@ -15,6 +15,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
+# OpenTelemetry Java agent — zero-code instrumentation for spring-web, JDBC
+# (db.postgresql spans), spring-kafka (auto W3C traceparent inject/extract on
+# the async Kafka hop), and logback (trace_id/span_id into MDC + OTLP log
+# export). Pinned and attached via JAVA_TOOL_OPTIONS, so neither pom.xml nor any
+# application code changes — the agent is a pure runtime concern. Downloaded
+# before the app jar so this large, version-stable layer stays cached.
+ARG OTEL_AGENT_VERSION=2.30.0
+RUN mkdir -p /otel \
+    && curl -fsSL -o /otel/opentelemetry-javaagent.jar \
+       "https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v${OTEL_AGENT_VERSION}/opentelemetry-javaagent.jar"
+ENV JAVA_TOOL_OPTIONS="-javaagent:/otel/opentelemetry-javaagent.jar"
+
 COPY --from=build /app/target/inventory-service-*.jar app.jar
 
 EXPOSE 3002

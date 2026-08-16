@@ -71,12 +71,23 @@ datasources:
     access: proxy
     url: http://loki:3100
     jsonData:
-      # Logs → trace. Every log line carries trace_id (see the logging
-      # conventions in docs/events.md); this turns it into a link.
+      # Logs → trace. A log line reaches this link two different ways depending
+      # on the emitter, so there are two matchers (see docs/events.md):
       derivedFields:
+        # Primary path — Go (otelslog) and the Java agent attach the id to the
+        # OTLP log record's trace context, which Loki 3.x stores as the
+        # `trace_id` structured-metadata field, never in the body. A Label
+        # matcher reads that key directly (requires Grafana 11.1+).
         - name: TraceID
-          # Matches trace_id as a JSON field or as key=value in plain text,
-          # since the Go services log JSON and the Node/Java services do not.
+          matcherType: label
+          matcherRegex: trace_id
+          url: "$${__value.raw}"
+          datasourceUid: tempo
+          urlDisplayLabel: View trace
+        # Fallback — Node logs the id inline as `trace_id=<hex>` in the message
+        # body; match it there with a regex capture group.
+        - name: TraceID
+          matcherType: regex
           matcherRegex: '"?trace_?[iI]d"?[=:]\s*"?([a-f0-9]{32})"?'
           url: "$${__value.raw}"
           datasourceUid: tempo
