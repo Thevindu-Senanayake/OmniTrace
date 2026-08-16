@@ -18,8 +18,11 @@ datasources:
       httpMethod: POST
       # Lets a histogram bucket carry a link to a sampled trace, which is what
       # makes a latency spike clickable rather than just visible.
+      # The label name must match what Tempo's metrics_generator writes on the
+      # exemplar — it emits `traceID` (camelCase), not `trace_id`. A mismatch
+      # here renders the exemplar dots but drops the link to the trace.
       exemplarTraceIdDestinations:
-        - name: trace_id
+        - name: traceID
           datasourceUid: tempo
           urlDisplayLabel: View trace
 
