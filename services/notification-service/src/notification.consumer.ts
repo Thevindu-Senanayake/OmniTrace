@@ -38,7 +38,7 @@ export class NotificationConsumer implements OnModuleInit, OnModuleDestroy {
     }
     await this.consumer.run({
       eachMessage: async ({ topic, message }) => {
-        this.handle(topic, message.value, message.headers);
+        this.handle(topic, message.value);
       },
     });
     this.logger.log(`subscribed topics=${TOPICS.join(',')} service=notification-service`);
@@ -48,11 +48,7 @@ export class NotificationConsumer implements OnModuleInit, OnModuleDestroy {
     await this.consumer.disconnect();
   }
 
-  private handle(
-    topic: string,
-    value: Buffer | null,
-    headers: Record<string, unknown> | undefined,
-  ): void {
+  private handle(topic: string, value: Buffer | null): void {
     if (!value) {
       return;
     }
@@ -75,20 +71,6 @@ export class NotificationConsumer implements OnModuleInit, OnModuleDestroy {
     }
     this.seen.add(key);
 
-    const traceId = this.extractTraceId(headers);
-    this.notifier.notify(topic, event, traceId);
-  }
-
-  /**
-   * Pulls the trace id out of the W3C traceparent header if present
-   * (format: version-traceid-spanid-flags), for log/trace correlation.
-   */
-  private extractTraceId(headers: Record<string, unknown> | undefined): string {
-    const raw = headers?.traceparent;
-    if (!raw) {
-      return 'none';
-    }
-    const parts = raw.toString().split('-');
-    return parts.length >= 3 ? parts[1] : 'none';
+    this.notifier.notify(topic, event);
   }
 }

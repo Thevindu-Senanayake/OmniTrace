@@ -2,6 +2,7 @@ import { Injectable, Logger, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { REQUEST_ID_HEADER } from './config';
+import { traceContext } from './trace-context';
 
 /**
  * Ensures every inbound request carries an X-Request-ID. If the client did not
@@ -20,8 +21,10 @@ export class RequestIdMiddleware implements NestMiddleware {
       req.headers[REQUEST_ID_HEADER] = requestId;
     }
     res.setHeader('X-Request-ID', requestId);
+    const { trace_id, span_id } = traceContext();
+    // A pure proxy never parses the body, so it cannot know the order id here.
     this.logger.log(
-      `request_id=${requestId} method=${req.method} path=${req.originalUrl} service=api-gateway`,
+      `request_id=${requestId} method=${req.method} path=${req.originalUrl} order_id=unknown trace_id=${trace_id} span_id=${span_id} service=api-gateway`,
     );
     next();
   }

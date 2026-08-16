@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { ChargeRequest, ChargeResponse } from "./charge.dto";
+import { traceContext } from "../trace-context";
 
 /**
  * Mock payment processor. Clean business logic only: it always approves the
@@ -21,8 +22,9 @@ export class ChargeService {
 			amount: req.amount,
 			processingMs: Date.now() - startedAt,
 		};
+		const { trace_id, span_id } = traceContext();
 		this.logger.log(
-			`charge approved order_id=${req.orderId} amount=${req.amount} transaction_id=${response.transactionId} service=payment-gateway`,
+			`charge approved order_id=${req.orderId} amount=${req.amount} transaction_id=${response.transactionId} trace_id=${trace_id} span_id=${span_id} service=payment-gateway`,
 		);
 		return response;
 	}
