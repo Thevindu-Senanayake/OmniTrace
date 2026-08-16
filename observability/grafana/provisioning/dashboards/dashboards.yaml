@@ -1,0 +1,20 @@
+# Dashboard provisioning. The JSON files sitting next to this provider are loaded
+# on startup, so the three core dashboards ship with the stack rather than being
+# clicked together by hand. `path` is the in-container mount, not a host path:
+# docker-compose bind-mounts observability/grafana/provisioning read-only at
+# /etc/grafana/provisioning, so this directory is /etc/grafana/provisioning/dashboards.
+apiVersion: 1
+
+providers:
+  - name: ecommerce-dashboards
+    orgId: 1
+    folder: E-commerce Observability
+    type: file
+    # Keep them editable in the UI for live demos, but reload from disk so an
+    # edit to the JSON is picked up without a Grafana restart.
+    disableDeletion: false
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

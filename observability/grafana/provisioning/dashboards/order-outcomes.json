@@ -1,0 +1,102 @@
+{
+  "uid": "order-outcomes",
+  "title": "Saga / Order Outcomes",
+  "tags": ["ecommerce", "saga", "logs"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": { "from": "now-30m", "to": "now" },
+  "refresh": "10s",
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Confirmed (payment succeeded)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "green" } } },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum(count_over_time({service_name=\"payment-service\"} |= \"payment succeeded\" [$__auto]))", "queryType": "range", "legendFormat": "confirmed" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Payment failed",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "red" } } },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum(count_over_time({service_name=\"payment-service\"} |= \"payment failed\" [$__auto]))", "queryType": "range", "legendFormat": "payment failed" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Out of stock",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "orange" } } },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum(count_over_time({service_name=\"inventory-service\"} |= \"insufficient stock\" [$__auto]))", "queryType": "range", "legendFormat": "out of stock" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Notifications sent",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "notification-service is a Node service; its logs reach Loki only once the Node OTel-logs bridge is in place (see docs/observability.md). Until then this panel reads zero even when notifications are emitted to stdout.",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" } } },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum(count_over_time({service_name=\"notification-service\"} |= \"notification sent\" [$__auto]))", "queryType": "range", "legendFormat": "notifications" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Order outcomes over time",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } }, "color": { "mode": "palette-classic" } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum(count_over_time({service_name=\"payment-service\"} |= \"payment succeeded\" [$__auto]))", "queryType": "range", "legendFormat": "CONFIRMED" },
+        { "refId": "B", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum(count_over_time({service_name=\"payment-service\"} |= \"payment failed\" [$__auto]))", "queryType": "range", "legendFormat": "PAYMENT_FAILED" },
+        { "refId": "C", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum(count_over_time({service_name=\"inventory-service\"} |= \"insufficient stock\" [$__auto]))", "queryType": "range", "legendFormat": "OUT_OF_STOCK" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Stock reserved vs insufficient (inventory saga)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum(count_over_time({service_name=\"inventory-service\"} |= \"stock reserved\" [$__auto]))", "queryType": "range", "legendFormat": "reserved" },
+        { "refId": "B", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum(count_over_time({service_name=\"inventory-service\"} |= \"insufficient stock\" [$__auto]))", "queryType": "range", "legendFormat": "insufficient" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "logs",
+      "title": "Recent logs (each row's TraceID links to Tempo)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Cross-service log stream. The TraceID derived field on the Loki datasource turns each line's trace id into a link to the matching Tempo trace. Go and Java lines carry the id as structured metadata; Node lines carry it inline in the body.",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 12 },
+      "options": { "showTime": true, "showLabels": false, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{service_name=~\"api-gateway|order-service|product-catalog|inventory-service|payment-service|payment-gateway|notification-service\"}", "queryType": "range" }
+      ]
+    }
+  ]
+}

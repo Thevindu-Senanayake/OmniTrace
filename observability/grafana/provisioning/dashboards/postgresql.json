@@ -1,0 +1,150 @@
+{
+  "uid": "postgresql",
+  "title": "PostgreSQL",
+  "tags": ["ecommerce", "postgres", "database"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": { "from": "now-30m", "to": "now" },
+  "refresh": "10s",
+  "templating": {
+    "list": [
+      {
+        "name": "datname",
+        "label": "Database",
+        "type": "custom",
+        "query": "orders_db,catalog_db,inventory_db,payments_db",
+        "includeAll": true,
+        "allValue": "orders_db|catalog_db|inventory_db|payments_db",
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "PostgreSQL up",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }], "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "pg_up", "legendFormat": "up" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total connections",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 60 }, { "color": "red", "value": 90 }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(pg_stat_database_numbackends{datname=~\"$datname\"})", "legendFormat": "connections" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "max_connections",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "pg_settings_max_connections", "legendFormat": "max" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Deadlocks (5m)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(increase(pg_stat_database_deadlocks{datname=~\"$datname\"}[5m]))", "legendFormat": "deadlocks" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Active connections by database",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 20, "stacking": { "mode": "normal" } } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max", "lastNotNull"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "pg_stat_database_numbackends{datname=~\"$datname\"}", "legendFormat": "{{datname}}" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Transactions: commit vs rollback",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "lastNotNull"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(pg_stat_database_xact_commit{datname=~\"$datname\"}[$__rate_interval]))", "legendFormat": "commit/s" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(pg_stat_database_xact_rollback{datname=~\"$datname\"}[$__rate_interval]))", "legendFormat": "rollback/s" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Deadlocks rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 20 } } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(pg_stat_database_deadlocks{datname=~\"$datname\"}[$__rate_interval])", "legendFormat": "{{datname}}" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Cache hit ratio",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(pg_stat_database_blks_hit{datname=~\"$datname\"}[$__rate_interval]) / clamp_min(rate(pg_stat_database_blks_hit{datname=~\"$datname\"}[$__rate_interval]) + rate(pg_stat_database_blks_read{datname=~\"$datname\"}[$__rate_interval]), 1)", "legendFormat": "{{datname}}" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Rows fetched vs returned",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(pg_stat_database_tup_returned{datname=~\"$datname\"}[$__rate_interval]))", "legendFormat": "returned/s" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(pg_stat_database_tup_fetched{datname=~\"$datname\"}[$__rate_interval]))", "legendFormat": "fetched/s" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Slowest client operations p95 (DB queries + gateway call) — click for trace",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "p95 of CLIENT spans from Tempo span-metrics. db.postgresql spans (SELECT … FOR UPDATE lock waits under k6 spike) and the payment→gateway call surface here. Exemplars link to the exact trace.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 0 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["max", "lastNotNull"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.95, sum by (le, span_name, service) (rate(traces_spanmetrics_latency_bucket{span_kind=\"SPAN_KIND_CLIENT\"}[$__rate_interval])))", "legendFormat": "{{service}}: {{span_name}}", "exemplar": true }
+      ]
+    }
+  ]
+}
