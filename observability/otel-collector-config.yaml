@@ -80,6 +80,11 @@ service:
   telemetry:
     logs:
       level: info
+    # Bind the collector's own metrics endpoint to all interfaces; the default
+    # is localhost:8888, which is unreachable from Prometheus in another
+    # container (the otel-collector-internal scrape target refuses otherwise).
+    metrics:
+      address: 0.0.0.0:8888
 
 extensions:
   health_check:
