@@ -8,6 +8,10 @@ import (
 	"time"
 
 	kafkago "github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/ieee-yp/ecommerce-observability/order-service/internal/domain"
 )
@@ -75,6 +79,7 @@ func runReader(ctx context.Context, brokers []string, topic string, handle SagaH
 
 	logger.Info("saga consumer started", "topic", topic)
 
+	tracer := otel.Tracer("order-service/kafka")
 	failures := 0
 	backoff := fetchRetryBackoff
 	for {
@@ -99,22 +104,42 @@ func runReader(ctx context.Context, brokers []string, topic string, handle SagaH
 		}
 		failures, backoff = 0, fetchRetryBackoff
 
+		// Continue the upstream trace across the async hop: extract the
+		// traceparent from the headers into a consumer span. Extracting into
+		// ctx (not a fresh Background) keeps cancellation while rooting the
+		// span at the producer that published this message.
+		msgCtx := otel.GetTextMapPropagator().Extract(ctx, headerCarrier{&msg.Headers})
+		msgCtx, span := tracer.Start(msgCtx, topic+" process",
+			trace.WithSpanKind(trace.SpanKindConsumer),
+			trace.WithAttributes(
+				attribute.String("messaging.system", "kafka"),
+				attribute.String("messaging.source.name", topic),
+			),
+		)
+
 		var event domain.SagaEvent
 		if err := json.Unmarshal(msg.Value, &event); err != nil || event.OrderID == "" {
 			// Malformed message: log and commit — redelivery cannot fix it.
-			logger.Error("malformed saga event, skipping", "topic", topic, "error", err)
+			logger.ErrorContext(msgCtx, "malformed saga event, skipping", "topic", topic, "error", err)
+			span.SetStatus(codes.Error, "malformed saga event")
 			_ = reader.CommitMessages(ctx, msg)
+			span.End()
 			continue
 		}
+		span.SetAttributes(attribute.String("order_id", event.OrderID))
 
-		if err := handle(ctx, topic, event.OrderID); err != nil {
+		if err := handle(msgCtx, topic, event.OrderID); err != nil {
 			// Do not commit: message will be redelivered and retried.
-			logger.Error("saga handler failed, will retry", "topic", topic, "order_id", event.OrderID, "error", err)
+			logger.ErrorContext(msgCtx, "saga handler failed, will retry", "topic", topic, "order_id", event.OrderID, "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "saga handler failed")
+			span.End()
 			continue
 		}
 		if err := reader.CommitMessages(ctx, msg); err != nil {
-			logger.Error("commit failed", "topic", topic, "order_id", event.OrderID, "error", err)
+			logger.ErrorContext(msgCtx, "commit failed", "topic", topic, "order_id", event.OrderID, "error", err)
 		}
+		span.End()
 	}
 }
 

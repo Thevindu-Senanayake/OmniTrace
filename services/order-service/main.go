@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +17,7 @@ import (
 	"github.com/ieee-yp/ecommerce-observability/order-service/internal/handler"
 	kafkapkg "github.com/ieee-yp/ecommerce-observability/order-service/internal/kafka"
 	"github.com/ieee-yp/ecommerce-observability/order-service/internal/logging"
+	"github.com/ieee-yp/ecommerce-observability/order-service/internal/observability"
 	"github.com/ieee-yp/ecommerce-observability/order-service/internal/repository"
 	"github.com/ieee-yp/ecommerce-observability/order-service/internal/router"
 	"github.com/ieee-yp/ecommerce-observability/order-service/internal/service"
@@ -27,6 +29,24 @@ const serviceName = "order-service"
 var migrationsFS embed.FS
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Observability first: the otelslog bridge inside logging.New binds to the
+	// global LoggerProvider at construction, so the providers must exist before
+	// the logger is built. The exporters dial lazily, so this never blocks on
+	// the collector being up.
+	shutdownObs, err := observability.Setup(ctx, serviceName)
+	if err != nil {
+		slog.Error("observability setup failed", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownObs(shutdownCtx)
+	}()
+
 	logger := logging.New(serviceName)
 
 	cfg, err := config.Load()
@@ -40,9 +60,6 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("migrations applied")
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {

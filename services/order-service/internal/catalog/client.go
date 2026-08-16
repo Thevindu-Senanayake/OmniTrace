@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 var ErrProductNotFound = errors.New("product not found")
@@ -26,7 +28,13 @@ type Client struct {
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL: baseURL,
-		http:    &http.Client{Timeout: 5 * time.Second},
+		// otelhttp.NewTransport injects the W3C traceparent on the outbound
+		// request and opens a client span, so product-catalog's server span
+		// joins this same trace.
+		http: &http.Client{
+			Timeout:   5 * time.Second,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
 	}
 }
 

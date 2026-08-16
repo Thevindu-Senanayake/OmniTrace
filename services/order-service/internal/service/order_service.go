@@ -97,7 +97,7 @@ func (s *OrderService) PlaceOrder(ctx context.Context, req PlaceOrderRequest, re
 	if err != nil {
 		return domain.Order{}, err
 	}
-	s.logger.Info("order persisted", "order_id", order.ID, "request_id", requestID, "status", order.Status, "items", len(order.Items))
+	s.logger.InfoContext(ctx, "order persisted", "order_id", order.ID, "request_id", requestID, "status", order.Status, "items", len(order.Items))
 
 	eventItems := make([]domain.EventItem, len(order.Items))
 	for i, it := range order.Items {
@@ -131,7 +131,7 @@ func (s *OrderService) HandleSagaEvent(ctx context.Context, topic, orderID strin
 	case kafkapkg.TopicInventoryFailed:
 		newStatus = domain.StatusOutOfStock
 	default:
-		s.logger.Error("unknown saga topic", "topic", topic, "order_id", orderID)
+		s.logger.ErrorContext(ctx, "unknown saga topic", "topic", topic, "order_id", orderID)
 		return nil
 	}
 
@@ -140,9 +140,9 @@ func (s *OrderService) HandleSagaEvent(ctx context.Context, topic, orderID strin
 		return err
 	}
 	if applied {
-		s.logger.Info("order status updated", "order_id", orderID, "status", newStatus, "topic", topic)
+		s.logger.InfoContext(ctx, "order status updated", "order_id", orderID, "status", newStatus, "topic", topic)
 	} else {
-		s.logger.Info("saga event skipped (already transitioned or unknown order)", "order_id", orderID, "topic", topic)
+		s.logger.InfoContext(ctx, "saga event skipped (already transitioned or unknown order)", "order_id", orderID, "topic", topic)
 	}
 	return nil
 }

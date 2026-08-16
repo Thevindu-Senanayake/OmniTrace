@@ -37,7 +37,7 @@ func (h *OrderHandler) Create(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, service.ErrProductNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 	case err != nil:
-		h.logger.Error("place order failed", "request_id", requestID, "error", err)
+		h.logger.ErrorContext(r.Context(), "place order failed", "request_id", requestID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 	default:
 		writeJSON(w, http.StatusAccepted, map[string]any{

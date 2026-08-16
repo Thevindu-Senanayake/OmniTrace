@@ -23,11 +23,11 @@ func NewProductHandler(repo repository.ProductRepository, logger *slog.Logger) *
 func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	products, err := h.repo.List(r.Context())
 	if err != nil {
-		h.logger.Error("query products failed", "request_id", r.Header.Get("X-Request-ID"), "error", err)
+		h.logger.ErrorContext(r.Context(), "query products failed", "request_id", r.Header.Get("X-Request-ID"), "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
 		return
 	}
-	h.logger.Info("list products", "request_id", r.Header.Get("X-Request-ID"), "count", len(products))
+	h.logger.InfoContext(r.Context(), "list products", "request_id", r.Header.Get("X-Request-ID"), "count", len(products))
 	writeJSON(w, http.StatusOK, products)
 }
 
@@ -35,15 +35,15 @@ func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	p, err := h.repo.GetByID(r.Context(), id)
 	if errors.Is(err, repository.ErrNotFound) {
-		h.logger.Warn("product not found", "request_id", r.Header.Get("X-Request-ID"), "product_id", id)
+		h.logger.WarnContext(r.Context(), "product not found", "request_id", r.Header.Get("X-Request-ID"), "product_id", id)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "product not found", "id": id})
 		return
 	}
 	if err != nil {
-		h.logger.Error("query product failed", "request_id", r.Header.Get("X-Request-ID"), "product_id", id, "error", err)
+		h.logger.ErrorContext(r.Context(), "query product failed", "request_id", r.Header.Get("X-Request-ID"), "product_id", id, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
 		return
 	}
-	h.logger.Info("get product", "request_id", r.Header.Get("X-Request-ID"), "product_id", id)
+	h.logger.InfoContext(r.Context(), "get product", "request_id", r.Header.Get("X-Request-ID"), "product_id", id)
 	writeJSON(w, http.StatusOK, p)
 }
