@@ -1,0 +1,39 @@
+# Prometheus scrape config.
+#
+# Services do not expose /metrics themselves — they push OTLP to the collector,
+# which re-exposes everything on :8889. One scrape target covers all seven
+# services, and adding a service needs no change here.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: ecommerce-observability
+    environment: local
+
+scrape_configs:
+  # Application metrics, forwarded by the collector.
+  - job_name: otel-collector-apps
+    static_configs:
+      - targets: ["otel-collector:8889"]
+    # Required for exemplars to survive the scrape — without this the
+    # trace links on latency histograms are silently dropped.
+    honor_labels: true
+
+  # The collector's own health: queue depth, refused spans, export failures.
+  # Worth watching, because a collector dropping data looks identical to
+  # services emitting nothing.
+  - job_name: otel-collector-internal
+    static_configs:
+      - targets: ["otel-collector:8888"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # PostgreSQL internals via postgres_exporter — connection pool, lock waits,
+  # transaction rates, per-database. Complements the db.postgresql spans that
+  # the application traces produce.
+  - job_name: postgres-exporter
+    static_configs:
+      - targets: ["postgres-exporter:9187"]

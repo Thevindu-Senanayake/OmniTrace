@@ -1,3 +1,21 @@
+# ─── shared instrumentation config ───────────────────────────
+# Every service exports OTLP to the collector at one endpoint; only
+# OTEL_SERVICE_NAME differs per service, so the common vars are anchored here to
+# keep the service blocks below DRY. Application code never names
+# Tempo/Loki/Prometheus — swapping a backend is a collector-config change.
+x-otel-env: &otel-env
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  OTEL_RESOURCE_ATTRIBUTES: service.namespace=ecommerce,deployment.environment=local
+
+# The Java agent defaults all three signal exporters to OTLP already; setting
+# them explicitly keeps the behaviour visible here rather than implied.
+x-otel-java-env: &otel-java-env
+  <<: *otel-env
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: otlp
+  OTEL_LOGS_EXPORTER: otlp
+
 # ─── infra ───────────────────────────────────
 
 services:
@@ -18,6 +36,23 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Exposes PostgreSQL internals (connection counts, lock waits, transaction
+  # rates) as Prometheus metrics. --auto-discover-databases fans the exporter
+  # out across all four per-service databases, not just the one it connects to.
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: postgres-exporter
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/postgres?sslmode=disable
+      PG_EXPORTER_AUTO_DISCOVER_DATABASES: "true"
+    ports:
+      # Host access for debugging the exporter directly (Prometheus scrapes it
+      # over the internal network regardless).
+      - "9187:9187"
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
@@ -98,6 +133,8 @@ services:
     ports:
       - "${API_GATEWAY_PORT}:8080"
     environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: api-gateway
       PORT: "8080"
       ORDER_SERVICE_URL: http://order-service:3000
       PRODUCT_CATALOG_URL: http://product-catalog:3001
@@ -111,6 +148,8 @@ services:
     ports:
       - "${PRODUCT_CATALOG_PORT}:3001"
     environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: product-catalog
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/catalog_db?sslmode=disable
       PORT: "3001"
 
@@ -129,6 +168,8 @@ services:
     ports:
       - "${ORDER_SERVICE_PORT}:3000"
     environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: order-service
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/orders_db?sslmode=disable
       PORT: "3000"
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -147,6 +188,8 @@ services:
     ports:
       - "${INVENTORY_SERVICE_PORT}:3002"
     environment:
+      <<: *otel-java-env
+      OTEL_SERVICE_NAME: inventory-service
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/inventory_db?sslmode=disable
       PORT: "3002"
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -157,6 +200,8 @@ services:
     ports:
       - "${PAYMENT_GATEWAY_PORT}:3005"
     environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: payment-gateway
       PORT: "3005"
 
   # Transparent TCP proxy in front of the Payment Gateway. Starts with no
@@ -195,6 +240,8 @@ services:
     ports:
       - "${PAYMENT_SERVICE_PORT}:3004"
     environment:
+      <<: *otel-java-env
+      OTEL_SERVICE_NAME: payment-service
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/payments_db?sslmode=disable
       PORT: "3004"
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -213,11 +260,101 @@ services:
     ports:
       - "${NOTIFICATION_SERVICE_PORT}:3003"
     environment:
+      <<: *otel-env
+      OTEL_SERVICE_NAME: notification-service
       PORT: "3003"
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
+# ─── observability (LGTM stack) ───────────────────────────────
+# Services export OTLP to the collector only; the collector fans out to Tempo,
+# Loki and Prometheus. Backends are never addressed directly by application
+# code, so swapping one is a collector-config change.
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    container_name: otel-collector
+    command: ["--config=/etc/otel/config.yaml"]
+    depends_on:
+      tempo:
+        condition: service_started
+      loki:
+        condition: service_started
+    ports:
+      - "${OTEL_GRPC_PORT}:4317"
+      - "${OTEL_HTTP_PORT}:4318"
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otel/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    user: "0:0"
+    ports:
+      - "${TEMPO_PORT}:3200"
+    volumes:
+      - ./observability/tempo-config.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: loki
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    user: "0:0"
+    ports:
+      - "${LOKI_PORT}:3100"
+    volumes:
+      - ./observability/loki-config.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Tempo's metrics generator remote-writes RED metrics here, and exemplars
+      # are what make a latency spike link through to its trace.
+      - --web.enable-remote-write-receiver
+      - --enable-feature=exemplar-storage
+    ports:
+      - "${PROMETHEUS_PORT}:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: grafana
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    ports:
+      # Not 3000 on the host: order-service already owns that port.
+      - "${GRAFANA_PORT}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      # Local-only convenience: skip the login screen entirely.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+
 volumes:
   postgres-data:
+  tempo-data:
+  loki-data:
+  prometheus-data:
+  grafana-data:
 
 networks:
   default:
