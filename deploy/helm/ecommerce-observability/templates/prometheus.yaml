@@ -1,0 +1,95 @@
+{{- /*
+Prometheus — metrics store. Scrapes the collector's :8889 (app metrics) and
+:8888 (collector self-telemetry) plus postgres-exporter:9187, and receives
+remote-write from Tempo's metrics_generator (RED + service graph). The two
+feature flags are load-bearing: --web.enable-remote-write-receiver lets Tempo
+push, and --enable-feature=exemplar-storage is what makes a latency spike carry
+a link to its trace. Storage is emptyDir; runs as root so the non-root prometheus
+user can write to it. Config injected via --set-file.
+*/ -}}
+{{- if .Values.observability.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+data:
+  prometheus.yml: |
+{{ required "observability.configs.prometheus is empty — install with deploy/helm/install.ps1 (helm --set-file), not a bare `helm install`." .Values.observability.configs.prometheus | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+    {{- include "eco.selectorLabels" (dict "name" "prometheus") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "eco.selectorLabels" (dict "name" "prometheus") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ .Values.observability.configs.prometheus | sha256sum }}
+      labels:
+        {{- include "eco.labels" . | nindent 8 }}
+        {{- include "eco.selectorLabels" (dict "name" "prometheus") | nindent 8 }}
+    spec:
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+      containers:
+        - name: prometheus
+          image: {{ .Values.observability.prometheus.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --web.enable-remote-write-receiver
+            - --enable-feature=exemplar-storage
+          ports:
+            - name: http
+              containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.observability.prometheus.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "eco.selectorLabels" (dict "name" "prometheus") | nindent 4 }}
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
+{{- end }}

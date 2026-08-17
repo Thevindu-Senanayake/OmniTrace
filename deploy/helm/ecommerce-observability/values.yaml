@@ -131,3 +131,83 @@ services:
     resources:
       requests: { cpu: 50m, memory: 64Mi }
       limits: { cpu: 250m, memory: 128Mi }
+
+# ─── Observability (LGTM stack — parity with docker-compose) ──
+# The OTel Collector + Tempo + Loki + Prometheus + Grafana. When enabled, the
+# services above are also handed OTEL_* env (see templates/services.yaml) so
+# their SDKs/agents export here instead of the localhost default.
+#
+# Config files are NOT vendored into the chart: they live at repo-root
+# observability/ as the single source of truth shared with Compose. Helm cannot
+# read outside the chart dir, so each file's content is injected at install time
+# via `helm --set-file observability.configs.<key>=observability/<file>`. Use
+# deploy/helm/install.ps1 (or install.sh), which wires all nine. A bare
+# `helm install` leaves configs empty and the `required` guards in the
+# ConfigMap templates fail fast rather than rendering broken configs.
+#
+# Storage is emptyDir for every backend: this is a local demo, and dashboards /
+# datasources are re-provisioned from ConfigMaps on each restart, so nothing of
+# value is lost when a pod recycles. Tempo/Loki/Prometheus/Grafana run as root
+# because their images' non-root default users cannot write to an emptyDir mount
+# (Compose already runs tempo/loki as user 0:0 for the same reason).
+observability:
+  enabled: true
+
+  otelCollector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+
+  tempo:
+    image: grafana/tempo:2.6.0
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+
+  loki:
+    image: grafana/loki:3.2.0
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    # Local-only convenience: anonymous admin (matches Compose). Override for
+    # anything beyond a laptop demo.
+    adminUser: admin
+    adminPassword: admin
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 256Mi }
+
+  # Populated at install time by --set-file (see install.ps1 / install.sh).
+  # Left empty here on purpose: the ConfigMap templates wrap each value in
+  # `required`, so a bare `helm install` fails with a clear message instead of
+  # shipping empty configs.
+  configs:
+    otelCollector: ""
+    tempo: ""
+    loki: ""
+    prometheus: ""
+    grafanaDatasources: ""
+    grafanaDashboardsProvider: ""
+    dashboardServiceOverview: ""
+    dashboardPostgresql: ""
+    dashboardOrderOutcomes: ""
+
+# ─── PostgreSQL metrics exporter ─────────────────────────────
+# Exposes Postgres internals (connections, lock waits, transaction rates) as
+# Prometheus metrics; --auto-discover-databases fans out across all four
+# per-service databases. Rendered only when observability.enabled is true.
+postgresExporter:
+  image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+  resources:
+    requests: { cpu: 50m, memory: 32Mi }
+    limits: { cpu: 250m, memory: 64Mi }

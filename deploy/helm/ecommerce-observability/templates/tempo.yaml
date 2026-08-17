@@ -1,0 +1,99 @@
+{{- /*
+Tempo — trace storage. Single-binary, local filesystem (no object store, no
+clustering): sized for a laptop demo. The collector pushes OTLP traces to
+tempo:4317; Grafana queries the HTTP API on :3200. Tempo's metrics_generator
+also remote-writes RED/service-graph metrics to prometheus:9090 (configured in
+the mounted config, so the Service must be named `prometheus`).
+
+Storage is emptyDir and the container runs as root because the tempo image's
+non-root user cannot write to an emptyDir mount — Compose runs it as user 0:0
+for the same reason. Config injected via --set-file (see install.ps1).
+*/ -}}
+{{- if .Values.observability.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-config
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+data:
+  tempo.yaml: |
+{{ required "observability.configs.tempo is empty — install with deploy/helm/install.ps1 (helm --set-file), not a bare `helm install`." .Values.observability.configs.tempo | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+    {{- include "eco.selectorLabels" (dict "name" "tempo") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "eco.selectorLabels" (dict "name" "tempo") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ .Values.observability.configs.tempo | sha256sum }}
+      labels:
+        {{- include "eco.labels" . | nindent 8 }}
+        {{- include "eco.selectorLabels" (dict "name" "tempo") | nindent 8 }}
+    spec:
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+      containers:
+        - name: tempo
+          image: {{ .Values.observability.tempo.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - -config.file=/etc/tempo/tempo.yaml
+          ports:
+            - name: http
+              containerPort: 3200
+            - name: otlp-grpc
+              containerPort: 4317
+          volumeMounts:
+            - name: config
+              mountPath: /etc/tempo
+            - name: data
+              mountPath: /var/tempo
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3200
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 3200
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.observability.tempo.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: tempo-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "eco.selectorLabels" (dict "name" "tempo") | nindent 4 }}
+  ports:
+    - name: http
+      port: 3200
+      targetPort: 3200
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+{{- end }}

@@ -1,0 +1,108 @@
+{{- /*
+OpenTelemetry Collector — the single OTLP ingest point. Every service exports
+here; the collector fans out to Tempo (traces), Loki (logs) and re-exposes
+metrics on :8889 for Prometheus to scrape. Backend choice stays out of the
+services — swapping one is a change to the mounted config only.
+
+The config is not vendored into the chart: its content is injected at install
+time from repo-root observability/otel-collector-config.yaml via
+`--set-file observability.configs.otelCollector=...` (see install.ps1). `required`
+below turns a forgotten flag into a clear error instead of an empty ConfigMap.
+*/ -}}
+{{- if .Values.observability.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+{{ required "observability.configs.otelCollector is empty — install with deploy/helm/install.ps1 (helm --set-file), not a bare `helm install`." .Values.observability.configs.otelCollector | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+    {{- include "eco.selectorLabels" (dict "name" "otel-collector") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "eco.selectorLabels" (dict "name" "otel-collector") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Roll the pod when the collector config changes; without this a
+        # --set-file update would sit unread until the pod happened to restart.
+        checksum/config: {{ .Values.observability.configs.otelCollector | sha256sum }}
+      labels:
+        {{- include "eco.labels" . | nindent 8 }}
+        {{- include "eco.selectorLabels" (dict "name" "otel-collector") | nindent 8 }}
+    spec:
+      containers:
+        - name: otel-collector
+          image: {{ .Values.observability.otelCollector.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - --config=/etc/otel/config.yaml
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+            - name: metrics-int
+              containerPort: 8888
+            - name: metrics-app
+              containerPort: 8889
+            - name: health
+              containerPort: 13133
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 13133
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 13133
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.observability.otelCollector.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "eco.selectorLabels" (dict "name" "otel-collector") | nindent 4 }}
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+    # Application metrics, scraped by Prometheus (otel-collector-apps job).
+    - name: metrics-app
+      port: 8889
+      targetPort: 8889
+    # Collector self-telemetry (otel-collector-internal job).
+    - name: metrics-int
+      port: 8888
+      targetPort: 8888
+{{- end }}

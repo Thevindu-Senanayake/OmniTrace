@@ -1,0 +1,132 @@
+{{- /*
+Grafana — the unified UI. Datasources and dashboards are provisioned from two
+ConfigMaps so the stack comes up correlated (Prometheus/Tempo/Loki pre-linked)
+rather than as three unrelated UIs. The dashboards ConfigMap holds the provider
+YAML plus the three dashboard JSONs, all mounted at the provider's options.path
+(/etc/grafana/provisioning/dashboards).
+
+The dashboard JSONs contain Prometheus legend syntax (double-brace label refs
+such as per-service labels) — literal braces Helm would try to render if the
+JSON were inlined in a template. That is exactly why the content is injected as
+*values* via --set-file (values are data, never re-templated) instead of
+.Files.Get or inline blocks.
+
+No Ingress: Grafana is reached with `kubectl port-forward svc/grafana 3300:3000`
+(the Ingress stays dedicated to api-gateway). Runs as root to write its sqlite
+db on the emptyDir mount.
+*/ -}}
+{{- if .Values.observability.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+data:
+  datasources.yaml: |
+{{ required "observability.configs.grafanaDatasources is empty — install with deploy/helm/install.ps1 (helm --set-file), not a bare `helm install`." .Values.observability.configs.grafanaDatasources | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+data:
+  dashboards.yaml: |
+{{ required "observability.configs.grafanaDashboardsProvider is empty — install with deploy/helm/install.ps1 (helm --set-file), not a bare `helm install`." .Values.observability.configs.grafanaDashboardsProvider | indent 4 }}
+  service-overview.json: |
+{{ required "observability.configs.dashboardServiceOverview is empty — install with deploy/helm/install.ps1 (helm --set-file), not a bare `helm install`." .Values.observability.configs.dashboardServiceOverview | indent 4 }}
+  postgresql.json: |
+{{ required "observability.configs.dashboardPostgresql is empty — install with deploy/helm/install.ps1 (helm --set-file), not a bare `helm install`." .Values.observability.configs.dashboardPostgresql | indent 4 }}
+  order-outcomes.json: |
+{{ required "observability.configs.dashboardOrderOutcomes is empty — install with deploy/helm/install.ps1 (helm --set-file), not a bare `helm install`." .Values.observability.configs.dashboardOrderOutcomes | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+    {{- include "eco.selectorLabels" (dict "name" "grafana") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "eco.selectorLabels" (dict "name" "grafana") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Roll Grafana when any provisioned datasource or dashboard changes.
+        checksum/config: {{ list .Values.observability.configs.grafanaDatasources .Values.observability.configs.grafanaDashboardsProvider .Values.observability.configs.dashboardServiceOverview .Values.observability.configs.dashboardPostgresql .Values.observability.configs.dashboardOrderOutcomes | join "" | sha256sum }}
+      labels:
+        {{- include "eco.labels" . | nindent 8 }}
+        {{- include "eco.selectorLabels" (dict "name" "grafana") | nindent 8 }}
+    spec:
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+      containers:
+        - name: grafana
+          image: {{ .Values.observability.grafana.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: {{ .Values.observability.grafana.adminUser | quote }}
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: {{ .Values.observability.grafana.adminPassword | quote }}
+            # Local-only convenience: skip the login screen entirely.
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: Admin
+            - name: GF_FEATURE_TOGGLES_ENABLE
+              value: traceqlEditor
+          ports:
+            - name: http
+              containerPort: 3000
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboards
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: data
+              mountPath: /var/lib/grafana
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.observability.grafana.resources | nindent 12 }}
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "eco.selectorLabels" (dict "name" "grafana") | nindent 4 }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+{{- end }}

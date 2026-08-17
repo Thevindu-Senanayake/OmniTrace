@@ -92,6 +92,29 @@ spec:
             - name: PAYMENT_GATEWAY_URL
               value: "http://toxiproxy:{{ $root.Values.toxiproxy.paymentPort }}"
             {{- end }}
+            {{- if $root.Values.observability.enabled }}
+            # Instrumentation → OTel Collector. Mirrors the compose x-otel-env /
+            # x-otel-java-env anchors; without these the SDKs (Node/Go) and the
+            # Java agent export to their localhost default and hit nothing.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: OTEL_SERVICE_NAME
+              value: {{ $name | quote }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=ecommerce,deployment.environment=local"
+            {{- if or (eq $name "inventory-service") (eq $name "payment-service") }}
+            # The Java agent defaults all three signal exporters to OTLP already;
+            # setting them explicitly keeps the behaviour visible (matches compose).
+            - name: OTEL_TRACES_EXPORTER
+              value: "otlp"
+            - name: OTEL_METRICS_EXPORTER
+              value: "otlp"
+            - name: OTEL_LOGS_EXPORTER
+              value: "otlp"
+            {{- end }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /health

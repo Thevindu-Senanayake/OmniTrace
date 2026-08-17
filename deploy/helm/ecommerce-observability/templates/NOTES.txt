@@ -37,6 +37,23 @@ Ingress is disabled. Reach the gateway with a port-forward:
   curl http://localhost:8080/health
 {{- end }}
 
+{{- if .Values.observability.enabled }}
+
+Observability (Grafana / Prometheus / Tempo / Loki + postgres-exporter) is
+included. It must be installed via deploy/helm/install.ps1 (or install.sh),
+which injects the configs from repo-root observability/ using --set-file; a bare
+`helm install` leaves them empty and fails fast on the `required` guards.
+
+Grafana has no Ingress — reach it with a port-forward:
+
+  kubectl port-forward svc/grafana 3300:3000
+  # then http://localhost:3300  (anonymous admin, matches Compose)
+
+The three dashboards are under the "E-commerce Observability" folder; a latency
+exemplar on the RED panel links straight to its trace, and a trace links on to
+its logs in Loki.
+{{- end }}
+
 Watch rollout:
 
   kubectl get pods -w

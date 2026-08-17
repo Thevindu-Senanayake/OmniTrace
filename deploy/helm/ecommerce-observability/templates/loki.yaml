@@ -1,0 +1,90 @@
+{{- /*
+Loki — log storage. Single-binary, filesystem backend, no auth: local dev only.
+The collector pushes logs via OTLP to http://loki:3100/otlp (in the collector
+config); Grafana queries the same :3100. Storage is emptyDir and the container
+runs as root because the loki image's non-root user cannot write to an emptyDir
+mount (Compose runs it as user 0:0). Config injected via --set-file.
+*/ -}}
+{{- if .Values.observability.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+data:
+  loki.yaml: |
+{{ required "observability.configs.loki is empty — install with deploy/helm/install.ps1 (helm --set-file), not a bare `helm install`." .Values.observability.configs.loki | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+    {{- include "eco.selectorLabels" (dict "name" "loki") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "eco.selectorLabels" (dict "name" "loki") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ .Values.observability.configs.loki | sha256sum }}
+      labels:
+        {{- include "eco.labels" . | nindent 8 }}
+        {{- include "eco.selectorLabels" (dict "name" "loki") | nindent 8 }}
+    spec:
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+      containers:
+        - name: loki
+          image: {{ .Values.observability.loki.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - -config.file=/etc/loki/loki.yaml
+          ports:
+            - name: http
+              containerPort: 3100
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+            - name: data
+              mountPath: /loki
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3100
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 3100
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.observability.loki.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: loki-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  labels:
+    {{- include "eco.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "eco.selectorLabels" (dict "name" "loki") | nindent 4 }}
+  ports:
+    - name: http
+      port: 3100
+      targetPort: 3100
+{{- end }}
